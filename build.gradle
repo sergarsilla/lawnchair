@@ -161,6 +161,11 @@ android {
         buildConfigField "String", "COMMIT_HASH", "\"${buildCommit}\""
         buildConfigField "boolean", "ENABLE_AUTO_INSTALLS_LAYOUT", "false"
 
+        // Lets fork builds install side by side with upstream builds, e.g. -PappIdSuffix=.fork
+        if (project.hasProperty("appIdSuffix")) {
+            applicationIdSuffix project.property("appIdSuffix")
+        }
+
         manifestPlaceholders.quickstepMinSdk = quickstepMinSdk
         manifestPlaceholders.quickstepMaxSdk = quickstepMaxSdk
         buildConfigField "int", "QUICKSTEP_MIN_SDK", quickstepMinSdk

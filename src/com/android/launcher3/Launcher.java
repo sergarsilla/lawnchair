@@ -1642,10 +1642,12 @@ public class Launcher extends StatefulActivity<LauncherState>
                     mAppsView.reset(isStarted() /* animate */);
                 }
 
-                if (!mWorkspace.isHandlingTouch()) {
+                // Only jump to the default page when home is pressed while already on home,
+                // so returning from an app keeps the page the user left.
+                if (!mWorkspace.isHandlingTouch() && shouldMoveToDefaultScreen) {
                     if (mWorkspace.getNextPage() != mWorkspace.getDefaultPage()) {
                         mWorkspace.post(mWorkspace::moveToDefaultScreen);
-                    } else if (shouldMoveToDefaultScreen) {
+                    } else {
                         handleHomeTap();
                     }
                 }
