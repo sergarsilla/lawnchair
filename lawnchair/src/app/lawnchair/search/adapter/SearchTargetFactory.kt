@@ -7,6 +7,7 @@ import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.app.SearchManager
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
@@ -232,6 +233,44 @@ class SearchTargetFactory(
             MARKET_STORE,
             extras,
         )
+    }
+
+    /**
+     * Opens the default browser's own search screen with the query pre-filled but not submitted,
+     * so the launcher never sends the query anywhere and the browser's engine choice applies.
+     */
+    internal fun createBrowserSearchTarget(query: String): SearchTargetCompat? {
+        val pm = context.packageManager
+        val browserPackage = pm.resolveActivity(
+            Intent(Intent.ACTION_VIEW, "https://".toUri()),
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )?.activityInfo?.packageName ?: return null
+        // No default browser set: the resolver itself is returned.
+        if (browserPackage == "android") return null
+
+        val searchIntent = Intent(Intent.ACTION_WEB_SEARCH)
+            .setPackage(browserPackage)
+            .putExtra(SearchManager.QUERY, query)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (pm.resolveActivity(searchIntent, 0) == null) return null
+
+        val launchComponent = pm.getLaunchIntentForPackage(browserPackage)?.component ?: return null
+        val browserLabel = pm.getApplicationLabel(pm.getApplicationInfo(browserPackage, 0)).toString()
+
+        val id = "browserSearch:$query"
+        val action = SearchActionCompat.Builder(
+            id,
+            context.getString(R.string.all_apps_open_in_browser_message, browserLabel),
+        )
+            .setIcon(Icon.createWithResource(context, R.drawable.ic_launcher_home))
+            .setIntent(searchIntent)
+            .build()
+        val extras = bundleOf(
+            SearchResultView.EXTRA_ICON_COMPONENT_KEY to
+                ComponentKey(launchComponent, Process.myUserHandle()).toString(),
+            SearchResultView.EXTRA_HIDE_SUBTITLE to true,
+        )
+        return createSearchLinksTarget(id, action, START_PAGE, extras)
     }
 
     fun createWebSearchActionTarget(

@@ -88,7 +88,10 @@ class LawnchairLocalSearchAlgorithm(context: Context) : LawnchairSearchAlgorithm
                     val calcResult = CalculatorSearchProvider.search(context, query)
                         .firstOrNull()
 
-                    val allResults = appResults + shortcutResults + (calcResult ?: emptyList()) + nonAppResults + generateActionResults(query)
+                    val hasLocalMatches = appResults.isNotEmpty() ||
+                        shortcutResults.isNotEmpty() ||
+                        !calcResult.isNullOrEmpty()
+                    val allResults = appResults + shortcutResults + (calcResult ?: emptyList()) + nonAppResults + generateActionResults(query, hasLocalMatches)
 
                     val searchTargets = translateToSearchTargets(allResults)
                     setFirstItemQuickLaunch(searchTargets)
@@ -143,8 +146,12 @@ class LawnchairLocalSearchAlgorithm(context: Context) : LawnchairSearchAlgorithm
         currentJob?.cancel()
     }
 
-    private fun generateActionResults(query: String): List<SearchResult.Action> {
+    private fun generateActionResults(query: String, hasLocalMatches: Boolean): List<SearchResult.Action> {
         val actions = mutableListOf<SearchResult.Action>()
+
+        if (!hasLocalMatches && query.isNotBlank()) {
+            actions.add(SearchResult.Action.BrowserSearch(query = query))
+        }
         val prefs = PreferenceManager.getInstance(context)
         val prefs2 = PreferenceManager2.getInstance(context)
 

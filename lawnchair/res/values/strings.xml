@@ -969,6 +969,7 @@
     <string name="all_apps_search_market_message">Search for more apps</string>
     <string name="all_apps_search_on_web_message">Search on <xliff:g example="Startpage" id="web_search_provider">%1$s</xliff:g>
     </string>
+    <string name="all_apps_open_in_browser_message">Open in <xliff:g example="Vanadium" id="browser_name">%1$s</xliff:g></string>
     <string name="error_no_market_or_browser_installed">No app store or browser installed</string>
     <string name="all_apps_search_on_web_general">Search on the web</string>
 
