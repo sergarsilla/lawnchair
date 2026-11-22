@@ -166,6 +166,9 @@ data object ActionsSectionBuilder : SectionBuilder {
 
         val targets = mutableListOf<SearchTargetCompat>()
 
+        results.filterIsInstance<SearchResult.Action.OpenUrl>().firstOrNull()?.let { result ->
+            factory.createOpenUrlTarget(result.url, result.displayText)?.let { targets.add(it) }
+        }
         browserSearch.firstOrNull()?.let { result ->
             factory.createBrowserSearchTarget(result.query)?.let { targets.add(it) }
         }

@@ -7,6 +7,7 @@ import app.lawnchair.preferences2.firstCached
 import app.lawnchair.search.adapter.SearchLinksTarget
 import app.lawnchair.search.adapter.SearchTargetCompat
 import app.lawnchair.search.adapter.SearchTargetFactory
+import app.lawnchair.search.algorithms.data.TypedAddress
 import app.lawnchair.search.algorithms.engine.ActionsSectionBuilder
 import app.lawnchair.search.algorithms.engine.AppsAndShortcutsSectionBuilder
 import app.lawnchair.search.algorithms.engine.CalculationSectionBuilder
@@ -149,7 +150,10 @@ class LawnchairLocalSearchAlgorithm(context: Context) : LawnchairSearchAlgorithm
     private fun generateActionResults(query: String, hasLocalMatches: Boolean): List<SearchResult.Action> {
         val actions = mutableListOf<SearchResult.Action>()
 
-        if (!hasLocalMatches && query.isNotBlank()) {
+        val typedAddress = TypedAddress.parse(query)
+        if (typedAddress != null) {
+            actions.add(SearchResult.Action.OpenUrl(typedAddress.uri, typedAddress.displayText))
+        } else if (!hasLocalMatches && query.isNotBlank()) {
             actions.add(SearchResult.Action.BrowserSearch(query = query))
         }
         val prefs = PreferenceManager.getInstance(context)

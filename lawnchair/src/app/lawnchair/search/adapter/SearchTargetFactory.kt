@@ -1,6 +1,7 @@
 package app.lawnchair.search.adapter
 
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ShortcutInfo
@@ -240,34 +241,66 @@ class SearchTargetFactory(
      * so the launcher never sends the query anywhere and the browser's engine choice applies.
      */
     internal fun createBrowserSearchTarget(query: String): SearchTargetCompat? {
+        val browser = resolveDefaultBrowser() ?: return null
+        val searchIntent = Intent(Intent.ACTION_WEB_SEARCH)
+            .setPackage(browser.packageName)
+            .putExtra(SearchManager.QUERY, query)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (context.packageManager.resolveActivity(searchIntent, 0) == null) return null
+        return createBrowserTarget(
+            id = "browserSearch:$query",
+            title = context.getString(R.string.all_apps_open_in_browser_message, browser.label),
+            intent = searchIntent,
+            browser = browser,
+        )
+    }
+
+    /** Opens a typed address directly in the default browser, never in an app claiming the domain. */
+    internal fun createOpenUrlTarget(url: Uri, displayText: String): SearchTargetCompat? {
+        val browser = resolveDefaultBrowser() ?: return null
+        val viewIntent = Intent(Intent.ACTION_VIEW, url)
+            .setPackage(browser.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return createBrowserTarget(
+            id = "openUrl:$url",
+            title = context.getString(R.string.all_apps_open_url_message, displayText),
+            intent = viewIntent,
+            browser = browser,
+        )
+    }
+
+    private data class DefaultBrowser(
+        val packageName: String,
+        val label: String,
+        val launchComponent: ComponentName,
+    )
+
+    private fun resolveDefaultBrowser(): DefaultBrowser? {
         val pm = context.packageManager
-        val browserPackage = pm.resolveActivity(
+        val packageName = pm.resolveActivity(
             Intent(Intent.ACTION_VIEW, "https://".toUri()),
             PackageManager.MATCH_DEFAULT_ONLY,
         )?.activityInfo?.packageName ?: return null
         // No default browser set: the resolver itself is returned.
-        if (browserPackage == "android") return null
+        if (packageName == "android") return null
+        val launchComponent = pm.getLaunchIntentForPackage(packageName)?.component ?: return null
+        val label = pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+        return DefaultBrowser(packageName, label, launchComponent)
+    }
 
-        val searchIntent = Intent(Intent.ACTION_WEB_SEARCH)
-            .setPackage(browserPackage)
-            .putExtra(SearchManager.QUERY, query)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (pm.resolveActivity(searchIntent, 0) == null) return null
-
-        val launchComponent = pm.getLaunchIntentForPackage(browserPackage)?.component ?: return null
-        val browserLabel = pm.getApplicationLabel(pm.getApplicationInfo(browserPackage, 0)).toString()
-
-        val id = "browserSearch:$query"
-        val action = SearchActionCompat.Builder(
-            id,
-            context.getString(R.string.all_apps_open_in_browser_message, browserLabel),
-        )
+    private fun createBrowserTarget(
+        id: String,
+        title: String,
+        intent: Intent,
+        browser: DefaultBrowser,
+    ): SearchTargetCompat {
+        val action = SearchActionCompat.Builder(id, title)
             .setIcon(Icon.createWithResource(context, R.drawable.ic_launcher_home))
-            .setIntent(searchIntent)
+            .setIntent(intent)
             .build()
         val extras = bundleOf(
             SearchResultView.EXTRA_ICON_COMPONENT_KEY to
-                ComponentKey(launchComponent, Process.myUserHandle()).toString(),
+                ComponentKey(browser.launchComponent, Process.myUserHandle()).toString(),
             SearchResultView.EXTRA_HIDE_SUBTITLE to true,
         )
         return createSearchLinksTarget(id, action, START_PAGE, extras)

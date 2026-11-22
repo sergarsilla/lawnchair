@@ -25,6 +25,7 @@ sealed interface SearchResult {
     sealed interface Action : SearchResult {
         data class MarketSearch(val query: String) : Action
         data class BrowserSearch(val query: String) : Action
+        data class OpenUrl(val url: android.net.Uri, val displayText: String) : Action
         data class WebSearch(
             val query: String,
             val providerName: String,
