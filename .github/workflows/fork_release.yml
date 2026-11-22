@@ -1,0 +1,136 @@
+name: Fork release
+
+# Rebuilds this fork on top of the latest upstream branch and publishes a signed APK
+# as a GitHub release, so app stores such as Obtainium can track it.
+# The rebase happens only inside the runner: nothing is pushed back, because rewritten
+# commits that touch workflow files cannot be pushed with GITHUB_TOKEN.
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Build even if upstream has not changed'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: https://github.com/LawnchairLauncher/lawnchair.git
+  UPSTREAM_BRANCH: 16-dev
+  APP_ID_SUFFIX: .fork
+  BUILD_TASK: assembleLawnWithQuickstepNightlyRelease
+  KEEP_RELEASES: 5
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Rebase fork commits onto upstream
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream "$UPSTREAM_REPO"
+          git fetch --no-tags upstream "$UPSTREAM_BRANCH"
+          base=$(git merge-base HEAD "upstream/$UPSTREAM_BRANCH")
+          fork_commits=$(git rev-list --count "$base..HEAD")
+          echo "Replaying $fork_commits fork commit(s) onto upstream/$UPSTREAM_BRANCH"
+          git rebase --onto "upstream/$UPSTREAM_BRANCH" "$base"
+
+          upstream_sha=$(git rev-parse --short=10 "upstream/$UPSTREAM_BRANCH")
+          fork_sha=$(git rev-parse --short=10 "$GITHUB_SHA")
+          marker="upstream-$upstream_sha fork-$fork_sha"
+          last_notes=$(gh release view --json body --jq .body 2>/dev/null || true)
+          if [ "$FORCE" != "true" ] && grep -qF "$marker" <<< "$last_notes"; then
+            echo "Latest release already built from $marker, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "marker=$marker" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Update submodules
+        if: steps.sync.outputs.skip != 'true'
+        run: git submodule update --init --recursive
+
+      - uses: actions/setup-java@v6
+        if: steps.sync.outputs.skip != 'true'
+        with:
+          distribution: 'zulu'
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.sync.outputs.skip != 'true'
+
+      - name: Write signing config
+        if: steps.sync.outputs.skip != 'true'
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::KEYSTORE secret is missing; refusing to publish a debug-signed APK."
+            exit 1
+          fi
+          echo "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+          } > keystore.properties
+
+      - name: Build APK
+        if: steps.sync.outputs.skip != 'true'
+        run: ./gradlew "$BUILD_TASK" -PappIdSuffix="$APP_ID_SUFFIX"
+
+      - name: Publish release
+        if: steps.sync.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.sync.outputs.marker }}
+          UPSTREAM_SHA: ${{ steps.sync.outputs.upstream_sha }}
+        run: |
+          apk=$(find build/outputs/apk -name '*.apk' | head -n 1)
+          [ -n "$apk" ] || { echo "::error::No APK produced"; exit 1; }
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --print-certs "$apk" | grep -i 'SHA-256'
+
+          version="16.dev.${GITHUB_RUN_NUMBER}"
+          asset="Lawnchair-fork-${version}.apk"
+          cp "$apk" "$asset"
+          notes="Lawnchair ${UPSTREAM_BRANCH} rebuilt with this fork's patches.
+
+          Upstream commit: https://github.com/LawnchairLauncher/lawnchair/commit/${UPSTREAM_SHA}
+
+          Build marker: ${MARKER}"
+          gh release create "$version" "$asset" --title "Lawnchair fork $version" \
+            --notes "$notes" --target "$GITHUB_SHA" --latest
+
+      - name: Prune old releases
+        if: steps.sync.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | reverse | .[${KEEP_RELEASES}:] | .[].tagName" |
+          while read -r tag; do
+            gh release delete "$tag" --yes --cleanup-tag
+          done
