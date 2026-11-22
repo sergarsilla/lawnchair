@@ -23,6 +23,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Pin gh to this repository: with an "upstream" remote present it would target the parent.
+  GH_REPO: ${{ github.repository }}
   UPSTREAM_REPO: https://github.com/LawnchairLauncher/lawnchair.git
   UPSTREAM_BRANCH: 16-dev
   APP_ID_SUFFIX: .fork
